@@ -21,11 +21,74 @@
 | **Stable** | Проверенные версии Y3K Update Manager | [APT Stable](https://update.y3k.by/stable/apt/) |
 | **Nightly** | Тестовые сборки для проверки перед Stable | [APT Nightly](https://update.y3k.by/nightly/apt/) |
 
-Для установки Update Manager требуется подключить выбранный APT-канал, проверить доверенный ключ подписи репозитория и совместимость версии с установленным Wazuh Dashboard. **Не подключайте одновременно Stable и Nightly без явной политики выбора пакетов.**
+Для подключения выберите **только один канал**. Ниже приведена схема из [технической инструкции проекта](https://github.com/y3k-condor/Wazuh-dev/blob/main/docs/MANAGER-APT.md). Публичный ключ следует получить у владельца проекта по доверенному каналу: **не скачивайте ключ с произвольного URL и не отключайте проверку подписей**.
 
-> **Важно:** версия 0.2.18 опубликована в Stable, но её установка на Wazuh с существующими сторонними доработками пока не рекомендована: выявлена несовместимость защитных механизмов. Исправление готовится в 0.2.19. До публикации проверенной инструкции подключения ключа и APT source не копируйте команды из непроверенных источников. Публикация пакета в APT не означает, что он уже установлен на вашем сервере.
+### 1. Установите проверенный ключ
 
-Проверенные команды подключения репозиториев и установки будут добавлены здесь после подтверждения адресов ключей, структуры APT и совместимости пакета. GitHub Releases и публикация пакетов в APT — разные механизмы; актуальный канал установки определяется подписанным APT-репозиторием.
+Сверьте полный fingerprint ключа с утверждённым значением `3ECE E6B6 8C4D 4E44 E149 9052 8B2C 0821 E0E9 1771`. Файл `y3k-update-manager.gpg` должен быть заранее получен по доверенному каналу.
+
+```bash
+gpg --show-keys --with-fingerprint ./y3k-update-manager.gpg
+sudo install -m 0644 ./y3k-update-manager.gpg /usr/share/keyrings/y3k-update-manager.gpg
+```
+
+### 2. Подключите Stable
+
+Создайте файл `/etc/apt/sources.list.d/y3k-update-manager.sources`:
+
+```text
+Types: deb
+URIs: https://update.y3k.by/stable/apt/
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/y3k-update-manager.gpg
+By-Hash: force
+```
+
+Создайте файл `/etc/apt/preferences.d/y3k-update-manager`:
+
+```text
+Package: y3k-update-manager
+Pin: release o=Y3K,a=stable
+Pin-Priority: 990
+
+Package: y3k-update-manager
+Pin: release o=Y3K
+Pin-Priority: -1
+```
+
+### 3. Обновите индекс и проверьте кандидат
+
+```bash
+sudo apt update
+apt-cache policy y3k-update-manager
+```
+
+**Не устанавливайте пакет, пока не подтверждена совместимость с вашим Wazuh.** После подтверждения допуска к установке:
+
+```bash
+sudo apt install y3k-update-manager
+sudo python3 -I /usr/lib/y3k-update-manager/manage.py diagnose
+dpkg-query -W -f='${Version} ${Status}\n' y3k-update-manager
+```
+
+После установки проверьте карточки Manager в **Wazuh Dashboard → Advanced Settings**.
+
+### Nightly (только для тестовых стендов)
+
+Для Nightly **замените**, а не добавляйте вторую запись: `stable` → `nightly` в `URIs`, `Suites` и первой строке `Pin: release`. Перед установкой или обновлением явно задайте тестовую классификацию:
+
+```bash
+printf '%s\n' 'y3k-update-manager y3k-update-manager/instance-kind select test' | sudo debconf-set-selections
+sudo apt update
+apt-cache policy y3k-update-manager
+```
+
+Nightly не предназначен для Production. Если для канала утверждён отдельный ключ, используйте соответствующий проверенный keyring. Не смешивайте каналы, не используйте `trusted=yes`, `--allow-unauthenticated` или принудительное понижение версии.
+
+> **Статус совместимости:** версия 0.2.18 опубликована в Stable, однако выявлена проблема сосуществования со сторонними плагинами Wazuh. Исправление запланировано в 0.2.19; до его успешной проверки и публикации установка на такие системы не рекомендуется. Наличие пакета в APT не означает его готовность для любой конфигурации Wazuh.
+
+Публикация пакетов в APT и GitHub Releases — разные механизмы. Для подробностей, обновления, переключения каналов и диагностики см. [MANAGER-APT.md](https://github.com/y3k-condor/Wazuh-dev/blob/main/docs/MANAGER-APT.md).
 
 ## Концепция
 
